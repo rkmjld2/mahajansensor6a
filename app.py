@@ -4,7 +4,6 @@ import os
 from datetime import timedelta, datetime
 import csv
 
-
 app = Flask(__name__)
 
 # -------- CONFIG --------
@@ -27,49 +26,37 @@ def home():
     return render_template("index.html")
 
 # -------- RECEIVE DATA --------
-
-
-
-@app.route('/api/data')
+@app.route("/api/data")
 def receive_data():
+    global last_seen, collect_data
+
+    last_seen = time.time()
+
+    if request.args.get("key") != API_KEY:
+        return "Invalid API Key", 403
+
+    if not collect_data:
+        return "Stopped"
+
     try:
-        # -------- API KEY CHECK --------
-        key = request.args.get('key', '')
-        if key != API_KEY:
-            return "Unauthorized", 403
+        s1 = float(request.args.get("s1"))
+        s2 = float(request.args.get("s2"))
+        s3 = float(request.args.get("s3"))
+    except:
+        return "Invalid data", 400
 
-        # -------- SENSOR VALUES --------
-        s1 = request.args.get('s1', '0')
-        s2 = request.args.get('s2', '0')
-        s3 = request.args.get('s3', '0')
+    # -------- WRITE TO CSV --------
+    with open(DATA_FILE, "r") as f:
+        rows = list(csv.reader(f))
+        next_id = len(rows)
 
-        # -------- TIME HANDLING --------
-        timestamp = request.args.get('time')
+    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-        if not timestamp:
-            # fallback to IST
-            now = datetime.utcnow() + timedelta(hours=5, minutes=30)
-            timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    with open(DATA_FILE, "a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([next_id, s1, s2, s3, now])
 
-        # -------- DATABASE INSERT --------
-        cursor = db.cursor()
-
-        query = """
-        INSERT INTO sensor_db (s1, s2, s3, timestamp)
-        VALUES (%s, %s, %s, %s)
-        """
-
-        cursor.execute(query, (s1, s2, s3, timestamp))
-        db.commit()
-
-        print("✅ Data Saved:", s1, s2, s3, timestamp)
-
-        return "OK", 200
-
-    except Exception as e:
-        print("❌ API ERROR:", e)
-        return "ERROR", 500
-
+    return "Saved"
 
 # -------- STATUS --------
 @app.route("/status")
