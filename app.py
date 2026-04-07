@@ -90,9 +90,25 @@ def read_data():
     return list(reversed(data))
 
 # -------- GET DATA --------
-@app.route("/data")
+
+
+@app.route('/data')
 def get_data():
-    return jsonify(read_data()[:100])
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM sensor_db ORDER BY id DESC LIMIT 50")
+    rows = cursor.fetchall()
+
+    # ✅ FIX TIME HERE ONLY
+    for r in rows:
+        t = r['timestamp']
+
+        if isinstance(t, datetime):
+            # convert to string WITHOUT timezone change
+            r['timestamp'] = t.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            r['timestamp'] = str(t)
+
+    return jsonify(rows)
 
 # -------- LOAD ALL --------
 @app.route("/data_all")
