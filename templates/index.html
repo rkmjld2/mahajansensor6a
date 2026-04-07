@@ -237,6 +237,31 @@ window.onload = function(){
     status();
 };
 </script>
+function formatTime(t){
+
+    if(!t) return "";
+
+    // If already in correct format, just display
+    // Prevent browser timezone conversion
+    let parts = t.split(/[- :]/);
+
+    if(parts.length < 6) return t;
+
+    let d = new Date(
+        parts[0],        // year
+        parts[1]-1,      // month
+        parts[2],        // day
+        parts[3],        // hour
+        parts[4],        // minute
+        parts[5]         // second
+    );
+
+    // Force IST display (NO SHIFT)
+    return d.toLocaleString('en-GB', { hour12:false });
+}
+
+
+    
 </head>
 
 <body>
