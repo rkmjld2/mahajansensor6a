@@ -3,44 +3,66 @@
 <head>
 <title>ESP8266 Dashboard</title>
 
+<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body { font-family: Arial; background: #f4f4f4; }
-.container { width: 90%; margin: auto; text-align: center; }
-h2 { background: #1976d2; color: white; padding: 15px; }
-button { padding: 10px 20px; margin: 5px; font-size: 16px; }
-input, select { padding: 10px; margin: 5px; }
-table { width: 100%; margin-top: 20px; border-collapse: collapse; }
-th { background: #1976d2; color: white; padding: 10px; }
-td { padding: 8px; text-align: center; }
-canvas { margin-top: 20px; background: white; padding: 10px; }
+body {
+    font-family: Arial;
+    background: #f4f4f4;
+}
+
+.container {
+    width: 90%;
+    margin: auto;
+    text-align: center;
+}
+
+h2 {
+    background: #1976d2;
+    color: white;
+    padding: 15px;
+}
+
+button {
+    padding: 10px 20px;
+    margin: 5px;
+    font-size: 16px;
+}
+
+input, select {
+    padding: 10px;
+    margin: 5px;
+}
+
+table {
+    width: 100%;
+    margin-top: 20px;
+    border-collapse: collapse;
+}
+
+th {
+    background: #1976d2;
+    color: white;
+    padding: 10px;
+}
+
+td {
+    padding: 8px;
+    text-align: center;
+}
+
+canvas {
+    margin-top: 20px;
+    background: white;
+    padding: 10px;
+}
 </style>
 
 <script>
-
 let chart;
-let currentData = [];
-let autoRefresh = true;
-
-// -------- TIME FIX FUNCTION --------
-function formatTime(t){
-    if(!t) return "";
-
-    let parts = t.split(/[- :]/);
-    if(parts.length < 6) return t;
-
-    let d = new Date(
-        parseInt(parts[0]),
-        parseInt(parts[1]) - 1,
-        parseInt(parts[2]),
-        parseInt(parts[3]),
-        parseInt(parts[4]),
-        parseInt(parts[5])
-    );
-
-    return d.toLocaleString('en-GB', { hour12:false });
-}
+let currentData = [];   // ✅ store active data
+let autoRefresh = true; // ✅ control refresh
 
 // -------- START / STOP --------
 async function start(){ await fetch('/start'); }
@@ -63,7 +85,9 @@ async function status(){
     let d = await res.json();
 
     let el = document.getElementById("status");
+
     el.innerText = d.status + " (" + d.last_seen_seconds + "s ago)";
+
     el.style.color = (d.status === "Connected") ? "green" : "red";
 }
 
@@ -78,7 +102,7 @@ function showData(data){
             <td>${r.sensor1 || ""}</td>
             <td>${r.sensor2 || ""}</td>
             <td>${r.sensor3 || ""}</td>
-            <td>${formatTime(r.timestamp)}</td>
+            <td>${r.timestamp || ""}</td>
         </tr>`;
         tbody.innerHTML += row;
     });
@@ -89,7 +113,7 @@ async function search(){
     let start = document.getElementById("start").value;
     let end = document.getElementById("end").value;
 
-    autoRefresh = false;
+    autoRefresh = false; // ✅ stop refresh
 
     let res = await fetch('/search', {
         method: "POST",
@@ -98,12 +122,14 @@ async function search(){
     });
 
     let data = await res.json();
+
     currentData = data;
     showData(data);
 }
 
 // -------- GRAPH --------
 function drawChart(){
+
     let data = currentData;
 
     if(!data || data.length === 0){
@@ -113,7 +139,7 @@ function drawChart(){
 
     let type = document.getElementById("chartType").value;
 
-    let labels = data.map(d => formatTime(d.timestamp));
+    let labels = data.map(d => d.timestamp);
     let s1 = data.map(d => d.sensor1);
     let s2 = data.map(d => d.sensor2);
     let s3 = data.map(d => d.sensor3);
@@ -137,6 +163,7 @@ function drawChart(){
 
 // -------- DOWNLOAD --------
 function downloadCSV(){
+
     let data = currentData;
 
     if(!data || data.length === 0){
@@ -147,7 +174,7 @@ function downloadCSV(){
     let csv = "ID,Sensor1,Sensor2,Sensor3,Timestamp\n";
 
     data.forEach(r => {
-        csv += `${r.id},${r.sensor1},${r.sensor2},${r.sensor3},${formatTime(r.timestamp)}\n`;
+        csv += `${r.id},${r.sensor1},${r.sensor2},${r.sensor3},${r.timestamp}\n`;
     });
 
     let blob = new Blob([csv], { type: "text/csv" });
@@ -159,18 +186,42 @@ function downloadCSV(){
     a.click();
 }
 
-// -------- LOAD ALL --------
+// -------- CUSTOM QUERY --------
+async function runQuery(){
+    let q = document.getElementById("query").value;
+
+    autoRefresh = false; // ✅ stop refresh
+
+    let res = await fetch('/query', {
+        method:"POST",
+        headers: {"Content-Type":"application/x-www-form-urlencoded"},
+        body:`query=${q}`
+    });
+
+    let data = await res.json();
+
+    if (Array.isArray(data)) {
+        currentData = data;
+        showData(data);
+    } else {
+        alert("✔ " + data.message + "\nRows: " + data.rows_affected);
+        loadData();
+    }
+}
+//.... load all records 
 async function loadAll(){
-    autoRefresh = false;
+    autoRefresh = false; // stop refresh
 
     let res = await fetch('/data_all');
     let data = await res.json();
 
     currentData = data;
     showData(data);
-}
+}    
 
-// -------- RESET --------
+
+    
+// -------- RESET VIEW --------
 function resetView(){
     autoRefresh = true;
     loadData();
@@ -185,7 +236,6 @@ window.onload = function(){
     loadData();
     status();
 };
-
 </script>
 </head>
 
@@ -199,19 +249,20 @@ window.onload = function(){
 <button onclick="stop()">Stop</button>
 <button onclick="resetView()">Reset Auto View</button>
 <button onclick="loadAll()">Load All Data</button>
-
 <h3>Status: <span id="status">Checking...</span></h3>
 
-<h3>Search</h3>
+<!-- SEARCH -->
+<h3>Search by Date</h3>
 <input type="datetime-local" id="start">
 <input type="datetime-local" id="end">
 <button onclick="search()">Search</button>
 
+<!-- GRAPH -->
 <h3>Graph</h3>
 <select id="chartType">
-<option value="line">Line</option>
-<option value="bar">Bar</option>
-<option value="pie">Pie</option>
+    <option value="line">Line</option>
+    <option value="bar">Bar</option>
+    <option value="pie">Pie</option>
 </select>
 
 <button onclick="drawChart()">Draw Graph</button>
@@ -219,6 +270,12 @@ window.onload = function(){
 
 <canvas id="myChart"></canvas>
 
+<!-- CUSTOM QUERY -->
+<h3>Custom Query</h3>
+<input type="text" id="query" style="width:400px;">
+<button onclick="runQuery()">Run</button>
+
+<!-- TABLE -->
 <table border="1">
 <thead>
 <tr>
