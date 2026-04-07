@@ -90,72 +90,56 @@ def read_data():
     return list(reversed(data))
 
 # -------- GET DATA --------
-from datetime import datetime
+
 
 @app.route('/data')
 def get_data():
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM sensor_db ORDER BY id DESC LIMIT 50")
-    rows = cursor.fetchall()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM sensor_db ORDER BY id DESC LIMIT 50")
+        rows = cursor.fetchall()
 
-    data = []
+        data = []
 
-    for r in rows:
-        try:
-            ts = r[4]
-
-            # ✅ Safe conversion (no crash)
-            if isinstance(ts, datetime):
-                ts = ts.strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                ts = str(ts)
-
+        for row in rows:
             data.append({
-                "id": r[0],
-                "sensor1": r[1],
-                "sensor2": r[2],
-                "sensor3": r[3],
-                "timestamp": ts
+                "id": row[0],
+                "sensor1": row[1],
+                "sensor2": row[2],
+                "sensor3": row[3],
+                "timestamp": str(row[4])   # ✅ VERY IMPORTANT
             })
 
-        except Exception as e:
-            print("Row error:", e)
+        return jsonify(data)
 
-    return jsonify(data)
-
-
+    except Exception as e:
+        print("❌ DATA ERROR:", e)
+        return jsonify([])
 
 # -------- LOAD ALL --------
 @app.route('/data_all')
 def data_all():
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM sensor_db")
-    rows = cursor.fetchall()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM sensor_db")
+        rows = cursor.fetchall()
 
-    data = []
+        data = []
 
-    for r in rows:
-        try:
-            ts = r[4]
-
-            if isinstance(ts, datetime):
-                ts = ts.strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                ts = str(ts)
-
+        for row in rows:
             data.append({
-                "id": r[0],
-                "sensor1": r[1],
-                "sensor2": r[2],
-                "sensor3": r[3],
-                "timestamp": ts
+                "id": row[0],
+                "sensor1": row[1],
+                "sensor2": row[2],
+                "sensor3": row[3],
+                "timestamp": str(row[4])
             })
 
-        except Exception as e:
-            print("Row error:", e)
+        return jsonify(data)
 
-    return jsonify(data)
-
+    except Exception as e:
+        print("❌ DATA_ALL ERROR:", e)
+        return jsonify([])
 # -------- SEARCH --------
 @app.route("/search", methods=["POST"])
 def search():
