@@ -90,30 +90,71 @@ def read_data():
     return list(reversed(data))
 
 # -------- GET DATA --------
-
+from datetime import datetime
 
 @app.route('/data')
 def get_data():
-    cursor = db.cursor(dictionary=True)
+    cursor = db.cursor()
     cursor.execute("SELECT * FROM sensor_db ORDER BY id DESC LIMIT 50")
     rows = cursor.fetchall()
 
-    # ✅ FIX TIME HERE ONLY
+    data = []
+
     for r in rows:
-        t = r['timestamp']
+        try:
+            ts = r[4]
 
-        if isinstance(t, datetime):
-            # convert to string WITHOUT timezone change
-            r['timestamp'] = t.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            r['timestamp'] = str(t)
+            # ✅ Safe conversion (no crash)
+            if isinstance(ts, datetime):
+                ts = ts.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                ts = str(ts)
 
-    return jsonify(rows)
+            data.append({
+                "id": r[0],
+                "sensor1": r[1],
+                "sensor2": r[2],
+                "sensor3": r[3],
+                "timestamp": ts
+            })
+
+        except Exception as e:
+            print("Row error:", e)
+
+    return jsonify(data)
+
+
 
 # -------- LOAD ALL --------
-@app.route("/data_all")
+@app.route('/data_all')
 def data_all():
-    return jsonify(read_data())
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM sensor_db")
+    rows = cursor.fetchall()
+
+    data = []
+
+    for r in rows:
+        try:
+            ts = r[4]
+
+            if isinstance(ts, datetime):
+                ts = ts.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                ts = str(ts)
+
+            data.append({
+                "id": r[0],
+                "sensor1": r[1],
+                "sensor2": r[2],
+                "sensor3": r[3],
+                "timestamp": ts
+            })
+
+        except Exception as e:
+            print("Row error:", e)
+
+    return jsonify(data)
 
 # -------- SEARCH --------
 @app.route("/search", methods=["POST"])
