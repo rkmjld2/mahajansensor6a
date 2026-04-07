@@ -4,6 +4,7 @@ import os
 from datetime import timedelta, datetime
 import csv
 
+
 app = Flask(__name__)
 
 # -------- CONFIG --------
@@ -27,39 +28,40 @@ def home():
 
 # -------- RECEIVE DATA --------
 
-
 @app.route('/api/data')
 def receive_data():
-    key = request.args.get('key')
+    try:
+        key = request.args.get('key')
 
-    if key != API_KEY:
-        return "Unauthorized", 403
+        if key != API_KEY:
+            return "Unauthorized", 403
 
-    s1 = request.args.get('s1')
-    s2 = request.args.get('s2')
-    s3 = request.args.get('s3')
-    timestamp = request.args.get('time')   # ✅ GET FROM ESP
+        s1 = request.args.get('s1')
+        s2 = request.args.get('s2')
+        s3 = request.args.get('s3')
 
-    cursor = db.cursor()
+        # ✅ GET TIME FROM ESP (if available)
+        timestamp = request.args.get('time')
 
-    query = "INSERT INTO sensor_db (s1, s2, s3, timestamp) VALUES (%s, %s, %s, %s)"
-    cursor.execute(query, (s1, s2, s3, timestamp))
+        # ✅ If ESP time NOT sent → use server time
+        if not timestamp:
+            timestamp = datetime.utcnow() + timedelta(hours=5, minutes=30)
+            timestamp = timestamp.strftime("%d/%m/%Y %H:%M:%S")
 
-    db.commit()
+        cursor = db.cursor()
 
-    return "OK"
-    # -------- WRITE TO CSV --------
-    with open(DATA_FILE, "r") as f:
-        rows = list(csv.reader(f))
-        next_id = len(rows)
+        query = "INSERT INTO sensor_db (s1, s2, s3, timestamp) VALUES (%s, %s, %s, %s)"
+        cursor.execute(query, (s1, s2, s3, timestamp))
 
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        db.commit()
 
-    with open(DATA_FILE, "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([next_id, s1, s2, s3, now])
+        return "OK"
 
-    return "Saved"
+    except Exception as e:
+        print("❌ ERROR:", e)
+        return "ERROR", 500
+
+
 
 # -------- STATUS --------
 @app.route("/status")
