@@ -21,17 +21,31 @@ def receive_live():
     last_seen = time.time()
 
     record = request.args.get("data")
-    parts = record.split(",")
 
-    live_data.append({
-        "id": len(live_data) + 1,
-        "sensor1": parts[0],
-        "sensor2": parts[1],
-        "sensor3": parts[2],
-        "timestamp": parts[3]
-    })
+    try:
+        parts = record.split(",")
 
-    return "OK"
+        # ✅ validate ONLY sensors
+        s1 = float(parts[0])
+        s2 = float(parts[1])
+        s3 = float(parts[2])
+
+        ts = parts[3]   # keep as string
+
+        live_data.append({
+            "id": len(live_data) + 1,
+            "sensor1": s1,
+            "sensor2": s2,
+            "sensor3": s3,
+            "timestamp": ts
+        })
+
+        return "OK"
+
+    except Exception as e:
+        print("Error:", e)
+        return "Invalid sensor values", 400
+
 
 # -------- RECEIVE SD FULL DATA --------
 @app.route("/api/sddata", methods=["POST"])
