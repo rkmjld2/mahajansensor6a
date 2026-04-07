@@ -92,21 +92,23 @@ async function status(){
 }
 
 // -------- SHOW TABLE --------
+<script>
 function showData(data){
     let tbody = document.getElementById("tbody");
     tbody.innerHTML = "";
 
     data.forEach(r => {
         let row = `<tr>
-            <td>${r.id || ""}</td>
-            <td>${r.sensor1 || ""}</td>
-            <td>${r.sensor2 || ""}</td>
-            <td>${r.sensor3 || ""}</td>
-            <td>${r.timestamp || ""}</td>
+            <td>${r.id}</td>
+            <td>${r.sensor1}</td>
+            <td>${r.sensor2}</td>
+            <td>${r.sensor3}</td>
+            <td>${r.timestamp}</td>
         </tr>`;
         tbody.innerHTML += row;
     });
 }
+</script>
 
 // -------- SEARCH --------
 async function search(){
