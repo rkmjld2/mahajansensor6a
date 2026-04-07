@@ -1,171 +1,291 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Sensor Dashboard</title>
+<title>ESP8266 Dashboard</title>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <style>
-        body { font-family: Arial; padding:20px; }
-        table, th, td { border:1px solid black; border-collapse:collapse; padding:5px; }
-        button { margin:5px; }
-    </style>
-</head>
+<style>
+body {
+    font-family: Arial;
+    background: #f4f4f4;
+}
 
-<body>
+.container {
+    width: 90%;
+    margin: auto;
+    text-align: center;
+}
 
-<h2>Sensor Dashboard</h2>
+h2 {
+    background: #1976d2;
+    color: white;
+    padding: 15px;
+}
 
-<!-- STATUS -->
-Status: <span id="status">Checking...</span>
+button {
+    padding: 10px 20px;
+    margin: 5px;
+    font-size: 16px;
+}
 
-<br><br>
+input, select {
+    padding: 10px;
+    margin: 5px;
+}
 
-<!-- CONTROLS -->
-<button onclick="start()">Start</button>
-<button onclick="stop()">Stop</button>
-<button onclick="downloadCSV()">Download CSV</button>
+table {
+    width: 100%;
+    margin-top: 20px;
+    border-collapse: collapse;
+}
 
-<br><br>
+th {
+    background: #1976d2;
+    color: white;
+    padding: 10px;
+}
 
-<!-- SEARCH -->
-<h3>Search</h3>
+td {
+    padding: 8px;
+    text-align: center;
+}
 
-Start ID: <input type="number" id="startId">
-End ID: <input type="number" id="endId">
-
-<br><br>
-
-Start Date: <input type="datetime-local" id="startDate">
-End Date: <input type="datetime-local" id="endDate">
-
-<br><br>
-
-<button onclick="filterData()">Filter</button>
-
-<br><br>
-
-<!-- TABLE -->
-<table>
-<thead>
-<tr>
-<th>ID</th>
-<th>S1</th>
-<th>S2</th>
-<th>S3</th>
-<th>Time</th>
-</tr>
-</thead>
-
-<tbody id="data"></tbody>
-</table>
-
-<br>
-
-<!-- GRAPH -->
-<canvas id="chart" height="100"></canvas>
+canvas {
+    margin-top: 20px;
+    background: white;
+    padding: 10px;
+}
+</style>
 
 <script>
-
 let chart;
+let currentData = [];   // ✅ store active data
+let autoRefresh = true; // ✅ control refresh
+
+// -------- START / STOP --------
+async function start(){ await fetch('/start'); }
+async function stop(){ await fetch('/stop'); }
 
 // -------- LOAD DATA --------
 async function loadData(){
-    let res = await fetch('/api/all');
+    if(!autoRefresh) return;
+
+    let res = await fetch('/data');
     let data = await res.json();
 
-    let html = "";
-    let labels=[], s1=[], s2=[], s3=[];
+    currentData = data;
+    showData(data);
+}
 
-    data.slice(-50).forEach(r=>{
-        html += `<tr>
-        <td>${r.id}</td>
-        <td>${r.sensor1}</td>
-        <td>${r.sensor2}</td>
-        <td>${r.sensor3}</td>
-        <td>${r.time}</td>
+// -------- STATUS --------
+async function status(){
+    let res = await fetch('/status');
+    let d = await res.json();
+
+    let el = document.getElementById("status");
+
+    el.innerText = d.status + " (" + d.last_seen_seconds + "s ago)";
+
+    el.style.color = (d.status === "Connected") ? "green" : "red";
+}
+
+// -------- SHOW TABLE --------
+function showData(data){
+    let tbody = document.getElementById("tbody");
+    tbody.innerHTML = "";
+
+    data.forEach(r => {
+        let row = `<tr>
+            <td>${r.id || ""}</td>
+            <td>${r.sensor1 || ""}</td>
+            <td>${r.sensor2 || ""}</td>
+            <td>${r.sensor3 || ""}</td>
+            <td>${r.timestamp || ""}</td>
         </tr>`;
+        tbody.innerHTML += row;
+    });
+}
 
-        labels.push(r.time);
-        s1.push(r.sensor1);
-        s2.push(r.sensor2);
-        s3.push(r.sensor3);
+// -------- SEARCH --------
+async function search(){
+    let start = document.getElementById("start").value;
+    let end = document.getElementById("end").value;
+
+    autoRefresh = false; // ✅ stop refresh
+
+    let res = await fetch('/search', {
+        method: "POST",
+        headers: {"Content-Type":"application/x-www-form-urlencoded"},
+        body: `start=${start}&end=${end}`
     });
 
-    document.getElementById("data").innerHTML = html;
+    let data = await res.json();
 
-    drawGraph(labels,s1,s2,s3);
+    currentData = data;
+    showData(data);
 }
 
 // -------- GRAPH --------
-function drawGraph(labels,s1,s2,s3){
+function drawChart(){
+
+    let data = currentData;
+
+    if(!data || data.length === 0){
+        alert("No data to plot");
+        return;
+    }
+
+    let type = document.getElementById("chartType").value;
+
+    let labels = data.map(d => d.timestamp);
+    let s1 = data.map(d => d.sensor1);
+    let s2 = data.map(d => d.sensor2);
+    let s3 = data.map(d => d.sensor3);
+
     if(chart) chart.destroy();
 
-    chart = new Chart(document.getElementById("chart"), {
-        type: 'line',
+    let ctx = document.getElementById("myChart").getContext("2d");
+
+    chart = new Chart(ctx, {
+        type: type,
         data: {
             labels: labels,
             datasets: [
-                {label:"S1", data:s1},
-                {label:"S2", data:s2},
-                {label:"S3", data:s3}
+                { label: "Sensor 1", data: s1, borderWidth: 2 },
+                { label: "Sensor 2", data: s2, borderWidth: 2 },
+                { label: "Sensor 3", data: s3, borderWidth: 2 }
             ]
         }
     });
 }
 
-// -------- STATUS --------
-async function checkStatus(){
-    let res = await fetch('/status');
-    let data = await res.json();
-    document.getElementById("status").innerText = data.status;
-}
-
-// -------- FILTER --------
-function filterData(){
-    let sid = document.getElementById("startId").value;
-    let eid = document.getElementById("endId").value;
-
-    let sd = document.getElementById("startDate").value;
-    let ed = document.getElementById("endDate").value;
-
-    let rows = document.querySelectorAll("#data tr");
-
-    rows.forEach(r=>{
-        let id = parseInt(r.children[0].innerText);
-        let time = r.children[4].innerText;
-
-        let show = true;
-
-        if(sid && eid){
-            if(id < sid || id > eid) show=false;
-        }
-
-        if(sd && ed){
-            if(time < sd || time > ed) show=false;
-        }
-
-        r.style.display = show ? "" : "none";
-    });
-}
-
-// -------- CONTROL --------
-function start(){ fetch('/start'); }
-function stop(){ fetch('/stop'); }
-
 // -------- DOWNLOAD --------
 function downloadCSV(){
-    window.location.href="/download";
+
+    let data = currentData;
+
+    if(!data || data.length === 0){
+        alert("No data to download");
+        return;
+    }
+
+    let csv = "ID,Sensor1,Sensor2,Sensor3,Timestamp\n";
+
+    data.forEach(r => {
+        csv += `${r.id},${r.sensor1},${r.sensor2},${r.sensor3},${r.timestamp}\n`;
+    });
+
+    let blob = new Blob([csv], { type: "text/csv" });
+    let url = window.URL.createObjectURL(blob);
+
+    let a = document.createElement("a");
+    a.href = url;
+    a.download = "query_data.csv";
+    a.click();
+}
+
+// -------- CUSTOM QUERY --------
+async function runQuery(){
+    let q = document.getElementById("query").value;
+
+    autoRefresh = false; // ✅ stop refresh
+
+    let res = await fetch('/query', {
+        method:"POST",
+        headers: {"Content-Type":"application/x-www-form-urlencoded"},
+        body:`query=${q}`
+    });
+
+    let data = await res.json();
+
+    if (Array.isArray(data)) {
+        currentData = data;
+        showData(data);
+    } else {
+        alert("✔ " + data.message + "\nRows: " + data.rows_affected);
+        loadData();
+    }
+}
+//.... load all records 
+async function loadAll(){
+    autoRefresh = false; // stop refresh
+
+    let res = await fetch('/data_all');
+    let data = await res.json();
+
+    currentData = data;
+    showData(data);
+}    
+
+
+    
+// -------- RESET VIEW --------
+function resetView(){
+    autoRefresh = true;
+    loadData();
 }
 
 // -------- AUTO REFRESH --------
-setInterval(loadData,5000);
-setInterval(checkStatus,5000);
+setInterval(loadData, 5000);
+setInterval(status, 3000);
 
-loadData();
-checkStatus();
-
+// -------- INIT --------
+window.onload = function(){
+    loadData();
+    status();
+};
 </script>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>ESP8266 Sensor Dashboard</h2>
+
+<button onclick="start()">Start</button>
+<button onclick="stop()">Stop</button>
+<button onclick="resetView()">Reset Auto View</button>
+<button onclick="loadAll()">Load All Data</button>
+<h3>Status: <span id="status">Checking...</span></h3>
+
+<!-- SEARCH -->
+<h3>Search by Date</h3>
+<input type="datetime-local" id="start">
+<input type="datetime-local" id="end">
+<button onclick="search()">Search</button>
+
+<!-- GRAPH -->
+<h3>Graph</h3>
+<select id="chartType">
+    <option value="line">Line</option>
+    <option value="bar">Bar</option>
+    <option value="pie">Pie</option>
+</select>
+
+<button onclick="drawChart()">Draw Graph</button>
+<button onclick="downloadCSV()">Download CSV</button>
+
+<canvas id="myChart"></canvas>
+
+<!-- CUSTOM QUERY -->
+<h3>Custom Query</h3>
+<input type="text" id="query" style="width:400px;">
+<button onclick="runQuery()">Run</button>
+
+<!-- TABLE -->
+<table border="1">
+<thead>
+<tr>
+<th>ID</th><th>S1</th><th>S2</th><th>S3</th><th>Date</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+
+</div>
 
 </body>
 </html>
