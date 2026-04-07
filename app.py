@@ -28,39 +28,47 @@ def home():
 
 # -------- RECEIVE DATA --------
 
+
+
 @app.route('/api/data')
 def receive_data():
     try:
-        key = request.args.get('key')
-
+        # -------- API KEY CHECK --------
+        key = request.args.get('key', '')
         if key != API_KEY:
             return "Unauthorized", 403
 
-        s1 = request.args.get('s1')
-        s2 = request.args.get('s2')
-        s3 = request.args.get('s3')
+        # -------- SENSOR VALUES --------
+        s1 = request.args.get('s1', '0')
+        s2 = request.args.get('s2', '0')
+        s3 = request.args.get('s3', '0')
 
-        # ✅ GET TIME FROM ESP (if available)
+        # -------- TIME HANDLING --------
         timestamp = request.args.get('time')
 
-        # ✅ If ESP time NOT sent → use server time
         if not timestamp:
-            timestamp = datetime.utcnow() + timedelta(hours=5, minutes=30)
-            timestamp = timestamp.strftime("%d/%m/%Y %H:%M:%S")
+            # fallback to IST
+            now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+            timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
 
+        # -------- DATABASE INSERT --------
         cursor = db.cursor()
 
-        query = "INSERT INTO sensor_db (s1, s2, s3, timestamp) VALUES (%s, %s, %s, %s)"
-        cursor.execute(query, (s1, s2, s3, timestamp))
+        query = """
+        INSERT INTO sensor_db (s1, s2, s3, timestamp)
+        VALUES (%s, %s, %s, %s)
+        """
 
+        cursor.execute(query, (s1, s2, s3, timestamp))
         db.commit()
 
-        return "OK"
+        print("✅ Data Saved:", s1, s2, s3, timestamp)
+
+        return "OK", 200
 
     except Exception as e:
-        print("❌ ERROR:", e)
+        print("❌ API ERROR:", e)
         return "ERROR", 500
-
 
 
 # -------- STATUS --------
