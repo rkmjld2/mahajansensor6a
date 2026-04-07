@@ -26,25 +26,28 @@ def home():
     return render_template("index.html")
 
 # -------- RECEIVE DATA --------
-@app.route("/api/data")
+
+
+@app.route('/api/data')
 def receive_data():
-    global last_seen, collect_data
+    key = request.args.get('key')
 
-    last_seen = time.time()
+    if key != API_KEY:
+        return "Unauthorized", 403
 
-    if request.args.get("key") != API_KEY:
-        return "Invalid API Key", 403
+    s1 = request.args.get('s1')
+    s2 = request.args.get('s2')
+    s3 = request.args.get('s3')
+    timestamp = request.args.get('time')   # ✅ GET FROM ESP
 
-    if not collect_data:
-        return "Stopped"
+    cursor = db.cursor()
 
-    try:
-        s1 = float(request.args.get("s1"))
-        s2 = float(request.args.get("s2"))
-        s3 = float(request.args.get("s3"))
-    except:
-        return "Invalid data", 400
+    query = "INSERT INTO sensor_db (s1, s2, s3, timestamp) VALUES (%s, %s, %s, %s)"
+    cursor.execute(query, (s1, s2, s3, timestamp))
 
+    db.commit()
+
+    return "OK"
     # -------- WRITE TO CSV --------
     with open(DATA_FILE, "r") as f:
         rows = list(csv.reader(f))
