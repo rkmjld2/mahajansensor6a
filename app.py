@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, render_template
 import mysql.connector
 import time
 import os
+from datetime import timedelta
 
 app = Flask(__name__)
 
@@ -30,11 +31,13 @@ def get_db():
 def home():
     return render_template("index.html")
 
+
 # -------- RECEIVE DATA --------
 @app.route("/api/data")
 def receive_data():
     global last_seen, collect_data
 
+    # ✅ update connection time
     last_seen = time.time()
 
     key = request.args.get("key")
@@ -67,8 +70,8 @@ def receive_data():
         return "Saved"
 
     except Exception as e:
-        print("DB ERROR:", e)
-        return "Error", 500
+        return str(e), 500
+
 
 # -------- STATUS --------
 @app.route("/status")
@@ -80,12 +83,16 @@ def status():
 
     diff = time.time() - last_seen
 
-    state = "Connected" if diff < 20 else "Disconnected"
+    if diff < 20:
+        state = "Connected"
+    else:
+        state = "Disconnected"
 
     return jsonify({
         "status": state,
         "last_seen_seconds": int(diff)
     })
+
 
 # -------- START / STOP --------
 @app.route("/start")
@@ -94,13 +101,15 @@ def start():
     collect_data = True
     return "Started"
 
+
 @app.route("/stop")
 def stop():
     global collect_data
     collect_data = False
     return "Stopped"
 
-# -------- GET DATA --------
+
+# -------- GET DATA (FIXED TIME) --------
 @app.route("/data")
 def get_data():
     try:
@@ -116,10 +125,11 @@ def get_data():
 
         data = cursor.fetchall()
 
-        # ✅ NO timezone conversion
         for row in data:
             if row["timestamp"]:
-                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+                # ✅ UTC → IST conversion
+                ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+                row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
 
         cursor.close()
         db.close()
@@ -127,10 +137,10 @@ def get_data():
         return jsonify(data)
 
     except Exception as e:
-        print("DATA ERROR:", e)
-        return jsonify([])
+        return jsonify({"error": str(e)})
 
-# -------- SEARCH --------
+
+# -------- SEARCH (FIXED TIME) --------
 @app.route("/search", methods=["POST"])
 def search():
     start = request.form.get("start")
@@ -156,7 +166,9 @@ def search():
 
         for row in data:
             if row["timestamp"]:
-                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+                # ✅ UTC → IST conversion
+                ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+                row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
 
         cursor.close()
         db.close()
@@ -164,10 +176,9 @@ def search():
         return jsonify(data)
 
     except Exception as e:
-        print("SEARCH ERROR:", e)
-        return jsonify([])
+        return jsonify({"error": str(e)})
 
-# -------- LOAD ALL --------
+# -------- GET ALL DATA --------
 @app.route("/data_all")
 def get_all_data():
     try:
@@ -182,9 +193,12 @@ def get_all_data():
 
         data = cursor.fetchall()
 
+        from datetime import timedelta
+
         for row in data:
             if row["timestamp"]:
-                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+                ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+                row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
 
         cursor.close()
         db.close()
@@ -192,10 +206,10 @@ def get_all_data():
         return jsonify(data)
 
     except Exception as e:
-        print("DATA_ALL ERROR:", e)
-        return jsonify([])
+        return jsonify({"error": str(e)})
 
-# -------- DOWNLOAD --------
+
+# -------- DOWNLOAD CSV (FIXED TIME) --------
 @app.route("/download", methods=["POST"])
 def download():
     import csv
@@ -221,9 +235,11 @@ def download():
 
     data = cursor.fetchall()
 
+    # ✅ convert time here also
     for row in data:
         if row["timestamp"]:
-            row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+            ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+            row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
 
     si = StringIO()
     writer = csv.writer(si)
@@ -239,15 +255,17 @@ def download():
             row["timestamp"]
         ])
 
+    output = si.getvalue()
+
     cursor.close()
     db.close()
 
-    return si.getvalue(), 200, {
+    return output, 200, {
         'Content-Type': 'text/csv',
         'Content-Disposition': 'attachment; filename=data.csv'
     }
 
-# -------- QUERY --------
+# -------- CUSTOM QUERY --------
 @app.route("/query", methods=["POST"])
 def run_query():
     query = request.form.get("query")
@@ -261,15 +279,21 @@ def run_query():
 
         cursor.execute(query)
 
+        # ✅ If SELECT → return data
         if query.strip().lower().startswith("select"):
             data = cursor.fetchall()
 
+            from datetime import timedelta
+
             for row in data:
                 if "timestamp" in row and row["timestamp"]:
-                    row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+                    ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+                    row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
 
             result = data
+
         else:
+            # ✅ INSERT / UPDATE / DELETE
             db.commit()
             result = {
                 "message": "Query executed successfully",
@@ -282,9 +306,6 @@ def run_query():
         return jsonify(result)
 
     except Exception as e:
-        print("QUERY ERROR:", e)
-        return jsonify([])
-
-# -------- RUN --------
+        return jsonify({"error": str(e)})
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
