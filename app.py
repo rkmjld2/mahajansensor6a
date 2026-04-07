@@ -1,24 +1,29 @@
 from flask import Flask, request, jsonify, render_template
+import mysql.connector
 import time
 import os
-from datetime import timedelta, datetime
-import csv
 
 app = Flask(__name__)
 
 # -------- CONFIG --------
-DATA_FILE = "data.csv"
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST"),
+    "port": int(os.getenv("DB_PORT", 4000)),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "database": os.getenv("DB_NAME"),
+    "connection_timeout": 10
+}
+
 API_KEY = os.getenv("API_KEY")
 
-# -------- STATE --------
+# -------- GLOBAL STATE --------
 last_seen = 0
 collect_data = True
 
-# -------- INIT FILE --------
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["id","sensor1","sensor2","sensor3","timestamp"])
+# -------- DB CONNECTION --------
+def get_db():
+    return mysql.connector.connect(**DB_CONFIG)
 
 # -------- HOME --------
 @app.route("/")
@@ -32,7 +37,8 @@ def receive_data():
 
     last_seen = time.time()
 
-    if request.args.get("key") != API_KEY:
+    key = request.args.get("key")
+    if key != API_KEY:
         return "Invalid API Key", 403
 
     if not collect_data:
@@ -43,33 +49,45 @@ def receive_data():
         s2 = float(request.args.get("s2"))
         s3 = float(request.args.get("s3"))
     except:
-        return "Invalid data", 400
+        return "Invalid sensor values", 400
 
-    # -------- WRITE TO CSV --------
-    with open(DATA_FILE, "r") as f:
-        rows = list(csv.reader(f))
-        next_id = len(rows)
+    try:
+        db = get_db()
+        cursor = db.cursor()
 
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        cursor.execute(
+            "INSERT INTO sensor_db (sensor1, sensor2, sensor3) VALUES (%s,%s,%s)",
+            (s1, s2, s3)
+        )
 
-    with open(DATA_FILE, "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([next_id, s1, s2, s3, now])
+        db.commit()
+        cursor.close()
+        db.close()
 
-    return "Saved"
+        return "Saved"
+
+    except Exception as e:
+        print("DB ERROR:", e)
+        return "Error", 500
 
 # -------- STATUS --------
 @app.route("/status")
 def status():
+    global last_seen
+
     if last_seen == 0:
         return jsonify({"status": "Disconnected", "last_seen_seconds": 0})
 
     diff = time.time() - last_seen
+
     state = "Connected" if diff < 20 else "Disconnected"
 
-    return jsonify({"status": state, "last_seen_seconds": int(diff)})
+    return jsonify({
+        "status": state,
+        "last_seen_seconds": int(diff)
+    })
 
-# -------- START/STOP --------
+# -------- START / STOP --------
 @app.route("/start")
 def start():
     global collect_data
@@ -82,103 +100,191 @@ def stop():
     collect_data = False
     return "Stopped"
 
-# -------- READ DATA --------
-def read_data():
-    with open(DATA_FILE, "r") as f:
-        reader = csv.DictReader(f)
-        data = list(reader)
-    return list(reversed(data))
-
 # -------- GET DATA --------
-
-
-@app.route('/data')
+@app.route("/data")
 def get_data():
     try:
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM sensor_db ORDER BY id DESC LIMIT 50")
-        rows = cursor.fetchall()
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
 
-        data = []
+        cursor.execute("""
+            SELECT id, sensor1, sensor2, sensor3, timestamp
+            FROM sensor_db
+            ORDER BY id DESC
+            LIMIT 100
+        """)
 
-        for row in rows:
-            data.append({
-                "id": row[0],
-                "sensor1": row[1],
-                "sensor2": row[2],
-                "sensor3": row[3],
-                "timestamp": str(row[4])   # ✅ VERY IMPORTANT
-            })
+        data = cursor.fetchall()
 
-        return jsonify(data)
+        # ✅ NO timezone conversion
+        for row in data:
+            if row["timestamp"]:
+                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
 
-    except Exception as e:
-        print("❌ DATA ERROR:", e)
-        return jsonify([])
-
-# -------- LOAD ALL --------
-@app.route('/data_all')
-def data_all():
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM sensor_db")
-        rows = cursor.fetchall()
-
-        data = []
-
-        for row in rows:
-            data.append({
-                "id": row[0],
-                "sensor1": row[1],
-                "sensor2": row[2],
-                "sensor3": row[3],
-                "timestamp": str(row[4])
-            })
+        cursor.close()
+        db.close()
 
         return jsonify(data)
 
     except Exception as e:
-        print("❌ DATA_ALL ERROR:", e)
+        print("DATA ERROR:", e)
         return jsonify([])
+
 # -------- SEARCH --------
 @app.route("/search", methods=["POST"])
 def search():
     start = request.form.get("start")
     end = request.form.get("end")
 
-    start_dt = datetime.strptime(start.replace("T"," "), "%Y-%m-%d %H:%M")
-    end_dt = datetime.strptime(end.replace("T"," "), "%Y-%m-%d %H:%M")
+    if start:
+        start = start.replace("T", " ")
+    if end:
+        end = end.replace("T", " ")
 
-    result = []
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
 
-    for row in read_data():
-        t = datetime.strptime(row["timestamp"], "%d/%m/%Y %H:%M:%S")
-        if start_dt <= t <= end_dt:
-            result.append(row)
+        cursor.execute("""
+            SELECT id, sensor1, sensor2, sensor3, timestamp
+            FROM sensor_db
+            WHERE timestamp BETWEEN %s AND %s
+            ORDER BY id DESC
+        """, (start, end))
 
-    return jsonify(result)
+        data = cursor.fetchall()
+
+        for row in data:
+            if row["timestamp"]:
+                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+
+        cursor.close()
+        db.close()
+
+        return jsonify(data)
+
+    except Exception as e:
+        print("SEARCH ERROR:", e)
+        return jsonify([])
+
+# -------- LOAD ALL --------
+@app.route("/data_all")
+def get_all_data():
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT id, sensor1, sensor2, sensor3, timestamp
+            FROM sensor_db
+            ORDER BY id DESC
+        """)
+
+        data = cursor.fetchall()
+
+        for row in data:
+            if row["timestamp"]:
+                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+
+        cursor.close()
+        db.close()
+
+        return jsonify(data)
+
+    except Exception as e:
+        print("DATA_ALL ERROR:", e)
+        return jsonify([])
 
 # -------- DOWNLOAD --------
 @app.route("/download", methods=["POST"])
 def download():
-    with open(DATA_FILE, "r") as f:
-        data = f.read()
+    import csv
+    from io import StringIO
 
-    return data, 200, {
+    start = request.form.get("start")
+    end = request.form.get("end")
+
+    if start:
+        start = start.replace("T", " ")
+    if end:
+        end = end.replace("T", " ")
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT id, sensor1, sensor2, sensor3, timestamp
+        FROM sensor_db
+        WHERE timestamp BETWEEN %s AND %s
+        ORDER BY id DESC
+    """, (start, end))
+
+    data = cursor.fetchall()
+
+    for row in data:
+        if row["timestamp"]:
+            row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+
+    si = StringIO()
+    writer = csv.writer(si)
+
+    writer.writerow(["ID", "Sensor1", "Sensor2", "Sensor3", "Timestamp"])
+
+    for row in data:
+        writer.writerow([
+            row["id"],
+            row["sensor1"],
+            row["sensor2"],
+            row["sensor3"],
+            row["timestamp"]
+        ])
+
+    cursor.close()
+    db.close()
+
+    return si.getvalue(), 200, {
         'Content-Type': 'text/csv',
         'Content-Disposition': 'attachment; filename=data.csv'
     }
 
-# -------- CUSTOM QUERY (LIMITED) --------
+# -------- QUERY --------
 @app.route("/query", methods=["POST"])
-def query():
-    q = request.form.get("query").lower()
+def run_query():
+    query = request.form.get("query")
 
-    if "delete" in q:
-        open(DATA_FILE, "w").write("id,sensor1,sensor2,sensor3,timestamp\n")
-        return jsonify({"message":"All data deleted","rows_affected":0})
+    if not query:
+        return jsonify({"error": "No query provided"})
 
-    return jsonify({"error":"Only DELETE supported"})
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
 
+        cursor.execute(query)
+
+        if query.strip().lower().startswith("select"):
+            data = cursor.fetchall()
+
+            for row in data:
+                if "timestamp" in row and row["timestamp"]:
+                    row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+
+            result = data
+        else:
+            db.commit()
+            result = {
+                "message": "Query executed successfully",
+                "rows_affected": cursor.rowcount
+            }
+
+        cursor.close()
+        db.close()
+
+        return jsonify(result)
+
+    except Exception as e:
+        print("QUERY ERROR:", e)
+        return jsonify([])
+
+# -------- RUN --------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
