@@ -12,7 +12,19 @@ last_seen = 0
 @app.route("/")
 def home():
     return render_template("index.html")
+@app.route("/search", methods=["POST"])
+def search():
+    data = request.get_json()
+    start = data.get("start")
+    end = data.get("end")
 
+    result = []
+
+    for r in full_data:
+        if start <= r["timestamp"] <= end:
+            result.append(r)
+
+    return jsonify(result)
 # -------- RECEIVE LIVE DATA --------
 @app.route("/api/data")
 def receive_live():
