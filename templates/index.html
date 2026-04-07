@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ESP8266 Dashboard</title>
+    <title>ESP8266 Sensor Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         body { font-family: Arial; text-align: center; }
-        button { padding: 10px; margin: 5px; }
+        button { padding: 8px; margin: 5px; }
+        input { padding: 5px; margin: 5px; }
+        canvas { max-width: 90%; }
     </style>
 </head>
 
@@ -18,6 +20,7 @@
 <button onclick="stop()">Stop</button>
 <button onclick="resetView()">Reset Auto View</button>
 <button onclick="loadAll()">Load All Data</button>
+<button onclick="downloadCSV()">Download CSV</button>
 
 <h3 id="status">Status: Checking...</h3>
 
@@ -27,6 +30,11 @@
 <button onclick="search()">Search</button>
 
 <h3>Graph</h3>
+<select id="chartType" onchange="drawChart()">
+    <option value="line">Line</option>
+    <option value="bar">Bar</option>
+</select>
+
 <canvas id="myChart"></canvas>
 
 <script>
@@ -34,46 +42,51 @@
 let autoRefresh = true;
 let currentData = [];
 
+// ✅ NO TIME CONVERSION (FIXED)
 function formatTime(t){
-    if(!t) return "";
-    return t;   // ✅ NO conversion (fix timezone issue)
+    return t;
 }
 
+// -------- LOAD LIVE DATA --------
 async function loadData(){
     if(!autoRefresh) return;
 
-    let res = await fetch('/api/latest');
+    let res = await fetch('/data');   // ✅ FIXED
     let data = await res.json();
 
     currentData = data;
-    showData(data);
+    drawChart();
 }
 
-function showData(data){
-    if(data.length === 0) return;
+// -------- DRAW GRAPH --------
+function drawChart(){
+    if(currentData.length === 0) return;
 
-    let labels = data.map(d => formatTime(d.timestamp));
-    let s1 = data.map(d => d.sensor1);
-    let s2 = data.map(d => d.sensor2);
-    let s3 = data.map(d => d.sensor3);
+    let labels = currentData.map(d => formatTime(d.timestamp));
+    let s1 = currentData.map(d => d.sensor1);
+    let s2 = currentData.map(d => d.sensor2);
+    let s3 = currentData.map(d => d.sensor3);
 
     let ctx = document.getElementById("myChart").getContext("2d");
 
     if(window.chart) window.chart.destroy();
 
+    let type = document.getElementById("chartType").value;
+
     window.chart = new Chart(ctx, {
-        type: 'line',
+        type: type,
         data: {
             labels: labels,
             datasets: [
-                { label: "Sensor 1", data: s1 },
-                { label: "Sensor 2", data: s2 },
-                { label: "Sensor 3", data: s3 }
+                { label: "Sensor 1", data: s1, borderWidth: 2 },
+                { label: "Sensor 2", data: s2, borderWidth: 2 },
+                { label: "Sensor 3", data: s3, borderWidth: 2 }
             ]
         }
     });
 }
 
+// -------- LOAD ALL FROM SD --------
 async function loadAll(){
     autoRefresh = false;
 
@@ -81,13 +94,32 @@ async function loadAll(){
     let data = await res.json();
 
     currentData = data;
-    showData(data);
+    drawChart();
 }
 
-function start(){ autoRefresh = true; }
-function stop(){ autoRefresh = false; }
-function resetView(){ autoRefresh = true; }
+// -------- DOWNLOAD CSV --------
+function downloadCSV(){
+    if(currentData.length === 0){
+        alert("No data");
+        return;
+    }
 
+    let csv = "ID,Sensor1,Sensor2,Sensor3,Timestamp\n";
+
+    currentData.forEach(r => {
+        csv += `${r.id},${r.sensor1},${r.sensor2},${r.sensor3},${r.timestamp}\n`;
+    });
+
+    let blob = new Blob([csv], { type: "text/csv" });
+    let url = URL.createObjectURL(blob);
+
+    let a = document.createElement("a");
+    a.href = url;
+    a.download = "sensor_data.csv";
+    a.click();
+}
+
+// -------- SEARCH --------
 async function search(){
     let start = document.getElementById("start").value;
     let end = document.getElementById("end").value;
@@ -102,9 +134,10 @@ async function search(){
 
     let data = await res.json();
     currentData = data;
-    showData(data);
+    drawChart();
 }
 
+// -------- STATUS --------
 async function status(){
     let res = await fetch('/status');
     let data = await res.json();
@@ -113,8 +146,19 @@ async function status(){
         data.connected ? "Status: Connected" : "Status: Disconnected";
 }
 
+// -------- CONTROLS --------
+function start(){ autoRefresh = true; }
+function stop(){ autoRefresh = false; }
+function resetView(){ autoRefresh = true; }
+
+// -------- AUTO REFRESH --------
 setInterval(loadData, 5000);
 setInterval(status, 3000);
+
+window.onload = function(){
+    loadData();
+    status();
+};
 
 </script>
 
